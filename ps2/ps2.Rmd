@@ -1,0 +1,161 @@
+---
+title: "PS2"
+author: "Jeleen Limawan"
+date: "4/11/2022"
+output: html_document
+---
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+raw <- read.csv("../../data/progresa-sample.csv.bz2")
+```
+
+
+# PS2
+## 1. Was the randomization done correctly? (30pt)
+### Your first task is to analyze whether randomization was performed correctly. Perfect randomization ensures that the treatment group and the control group are similar. This is less important in terms of observable characteristics, but very-very important for unobservables. Obviously, we can only analyze the observables: are the pre-treatment (1997) demographic and village-related characteristics for the poor equal (in average) in treatment and control villages?
+#### 1. (10pt) Present your results in a single table with the following columns and 14 (or so) rows.
+
+The following table was accomplished with the help of Ella Kim.
+
+```{r}
+raw <- raw %>% 
+  drop_na(sc, year, progresa, poor) %>% 
+  filter(poor == "pobre")
+df <- NULL
+raw_1997 <- raw %>% 
+  filter(year == 97) %>% 
+  select(-year, -poor, -folnum, -village, -sc97)
+cols <- colnames(raw_1997)
+cols <- cols[-9]
+for (column in cols) {
+  T_var <- raw_1997[raw_1997$progresa == "basal", column]
+  C <- raw_1997[raw_1997$progresa == 0, column]
+  avg_T <- mean(T_var, na.rm = T)
+  avg_C <- mean(C, na.rm = T)
+  diff <- avg_T - avg_C
+  p_val <- t.test(T_var, C)$p.value
+  row <- c(avg_T, avg_C, diff, p_val)
+  df <- rbind(df, row)
+}
+
+rownames(df) <- cols
+colnames(df) <- c("Average_T", "Average_C", "Difference(T-C)", "p-value")
+
+df
+
+```
+#### 2. (4pt) Did you find any statistically significant differences between treatment and control villages?
+I found a few statistically significant differences between the control group and the treatment group
+
+#### 3. (8pt) Why do we focus on 1997 differences only?
+We only focus on 1997 differences because we want to make sure that the pre-treatment (1997) control and treatment variables are similar. This is so we can accurately see if the program is the reason why there is change in education in poor villages.
+
+#### 4. (8pt) Why does it matter if treatment and control villages differ?
+It matters because these groups are not directly related to what we want to find out, but they might also be a reason why there is change after the year 1997. So, it is important that there is very little difference between the control and treatment groups.
+
+
+## 2. Measuring impact (45pt)
+#### 1. (2pt) First, let’s just compare group averages. Now you need four groups: treated and control, before and after treatment. DiD is the difference in the trends for treated and control groups. Compute these group averages and the corresponding DiD estimator.
+##### Hint: it should be 0.0313.
+```{r}
+raw <- raw %>% 
+  mutate(A = (year == 98),
+         T = (progresa == "basal")) 
+ct <- raw %>% 
+  group_by(A, T) %>% 
+  summarise(avg = mean(sc))
+
+did1 <- (ct[4,3] - ct[3,3]) - (ct[2,3] - ct[1,3])
+did2 <- (ct[1,3] - ct[3,3]) - (ct[2,3] - ct[4,3])
+print(did1 == did2)
+print(did1)
+```
+
+
+#### 2. (4pt) Estimate the effect using DiD simple regression (no other covariates).
+```{r}
+lm(sc ~ T * A, data = raw) %>% 
+  summary()
+```
+
+#### 3. (4pt) Interpret all the coefficients.
+In the treatment villages, there was a 0.75% point increase in the education of poor villages. However, this is not statistically significant, so we can ignore.
+In the year after the program was implemented, there was a .75% point decrease in the education of the poor villages. However, this is not statistically significant, so we can ignore.
+In the treatment group and after the program has been implemented, there was a 3.13% point increase in the education in the poor villages.
+
+#### 4. (4pt) Report the result: it should be the same as above. Is it statistically significant?
+The results are the same, and are also significantly significant because the p-value is below the significant level of 0.05.
+
+#### 5. (3pt) Now estimate the effect using multiple regression–include all relevant control variables.
+```{r}
+lm(sc ~ T * A + sex + min_dist + dist_cap + hohedu + hohwag + welfare_index + hohage, data = raw) %>% 
+  summary()
+```
+
+#### 6. (3pt) Compare the results. Is the multiple-regression version similar? Is it statistically significant?
+The multiple regression version was similar, and it is also statistically significant because the p-value is less than the significant level of 0.05.
+
+#### 7. (5pt) What are 95% confidence intervals for this estimator? Does this encompass all other estimates you received in this and in the previous PS?
+##### Hint: the upper boundary of 95% CI should be 0.0409.
+```{r}
+confint(lm(sc ~ T * A + sex + min_dist + dist_cap + hohedu + hohwag + welfare_index + hohage, data = raw))
+```
+The confidence interval tells us that that there is a 95% probability that the coefficient will fall between 0.018 and 0.043. All the other estimates we did fell in between this interval.
+
+#### 8. (8pt) What is the identifying assumption behind this DiD estimator? Would you be able to test it to a certain extent using the dataset here? Explain!
+##### Hint: what do you expect to see when comparing different villages? The same villages over time? Do you have this information in these data?
+The identifying assumption behind this DiD estimator is that the treatment villages have similar trends with the control villages in the absence of the treatment. I think we are able to test this to a certain extent because we calculated the average difference between various variables earlier and found some that had a small difference, and were statistically significant. I think we can probably use those variables to conduct the experiment.
+
+#### 9. (8pt) Compare this assumption with the assumptions behind CS and BA estimator. Which ones do you find more plausible? Why? Base your claims in the institutional settings: it is possibly imperfect randomized experiment in poor rural villages. Do you think some assumptions are more likely satisfied than others?
+If we are to only care about whether the program works, then it'll be best to use the DiD estimator because it removes the possible outside factors that might impact the sc. However, because this experiment is conducted in a poor, rural village, it might not be plausible. It might be hard to get randomized data in poor, rural villages. It will definitely be easier to conduct the experiment using the BA model, just because we're looking at the same villages, just at different times.
+
+#### 10. (4pt) Based on all your work you did above, what is your conclusion about the efficacy of the Progresa program?
+The Progresa program was successful in increasing the education of poor villages by about 3%.
+
+## 3. Leidner et al. (2021) (25pt)
+
+#### 1. Read the paper.
+
+#### 2. (3pt) Let us focus on the unmatched analysis. What kind of counties are the authors comparing in the paper? How many counties do they have? How many of these had remote, how many in-person instructions?
+The authors were comparing counties with large universities and colleges. There were a total of 22 remote-instruction counties and 79 in-person-instruction counties.
+
+#### 3. (2pt) Which time period are they looking at?
+Fall 2022
+
+#### 4. (4pt) What is treatment in this case? (You can define it in different ways).
+The treatment is the counties with remote instruction.
+
+#### 5. (3pt) What is the main outcome measure the authors discuss?
+The authors used incidence and testing rate per 100,000 population, test positivity, and the percentage of counties identified as hotspots for more than 1 day during the observation periods. I think the main outcome is the incidence.
+
+#### 6. (4pt) Why do authors analyze percentage positive results in testing?
+If the positive rate was unchanging or declining, then it might serve as evidence that the requirement for students to test before returning to campus and other surveillance efforts are working.
+
+#### 7. (4pt) The authors provide the figures for COVID-19 incidence (in table). Take the numbers and use those to do DiD youself! Show the calculations and the answer.
+##### Note: You don’t really need computers, the table provides the four averages, so you only have to compute the differences of those.
+##### Hint: effect should be 11.8 (or -11.8, depending which way you define it).
+(15.3 - 23.9) = -8.6
+(14.7 - 17.9) = 3.2
+-8.6 - 3.2 = -11.8
+
+(17.9 - 15.3) = 2.6
+(14.7 - 23.9) = -9.2
+-9.2 - 2.6 = -11.8
+
+#### 8. (5pt) What are the identifying assumptions? Do you find these credible?
+##### Hint: read about the limitations of the study and think which limitations are about identification.
+The identifying assumption is that the counties with remote schooling and the counties with in-person schooling will have the same trends, if we remove the treatment (remote schooling).
+
+At first, I thought that these were credible. However, after reading the limitations, I don't think this model is credible. 
+
+* Missclassification present
+* Assumptions can't be used with small colleges
+* Does not take into account the mandatory use of masks, social distancing, etc.
+* Used census to calculate rates
+* Longer-term incidence not calculated
+* University counties in unmatched analysis have much larger population and resources than those in the nonuniversity counties
+
+## Finally . . . tell how much time (hours) did you spend on this PS. Feel free to add other feedback.
+I took around 6 hours to complete.
